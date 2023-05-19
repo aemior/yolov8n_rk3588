@@ -45,9 +45,9 @@ rknn_yolov8_demo_video
 
 The tools directory contains scripts for model conversion which are intended to be run on a host machine. These include:
 
-- modity_no_boxhead_transpose.py
+- modify_no_tail.py
 
-  This script removes the bbox head and performs other operations on the official exported Yolv8n model.
+  This script removes the tail of the official exported Yolv8n model.
 
 - onnx2rknn_export.py
 
