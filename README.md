@@ -35,7 +35,7 @@ rknn_yolov8_demo_picture
 
 **Inference from Video**
 
-Video inference is currently under development :construction:. Initial tests indicate performance is currently too slow.
+Video inference is currently under development :construction:. To run the demo, please install ffmpeg and rtsp server, modifiy the input_path in src/video_demo.cc and rtsp address.
 
 ```
 rknn_yolov8_demo_video

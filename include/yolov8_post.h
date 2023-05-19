@@ -26,6 +26,20 @@ const std::string coco_classes[] = {"person", "bicycle", "car", "motorbike ", "a
            "pottedplant", "bed", "diningtable", "toilet ", "tvmonitor", "laptop ", "mouse   ", "remote ", "keyboard ", "cell phone", "microwave ",
            "oven ", "toaster", "sink", "refrigerator ", "book", "clock", "vase", "scissors ", "teddy bear ", "hair drier", "toothbrush"};
 
+/** @brief Performs tail process for yolov8(no tail, just like dfl).
+
+* @param input input[0] is the buffer of confidence of layer_20x20 with shape (1xclass_numx20x20),
+*              intpu[1] is the buffer of bbox of layer_20x20 with shape (1x64x20x20),
+*              input[2] is the buffer of confidence of layer_40x40 with shape (1xclass_numx40x40),
+*              intpu[3] is the buffer of bbox of layer_40x40 with shape (1x64x40x40),
+*              input[4] is the buffer of confidence of layer_80x80 with shape (1xclass_numx80x80),
+*              intpu[5] is the buffer of bbox of layer_80x80 with shape (1x64x80x80),
+* @param output output[0] is the buffer of dlf result with shape (1x8400x4),
+*              output[1] is the buffer of the confidence with shape (1x8400xclass_num).
+* @param class_num the total number of classes;
+*/
+void yolov8_tail_process(float** input, float** output, int class_num);
+
 /** @brief Performs post process for yolov8(no bbox head).
 
 * @param input input[0] is the buffer of dlf result with shape (1x8400x4),
@@ -38,6 +52,7 @@ const std::string coco_classes[] = {"person", "bicycle", "car", "motorbike ", "a
 * @param debug_flat if print the debug imformation.
 */
 std::vector<DetectionResult> yolov8_post_process(float** input, int class_num, float scale_x, float scale_y, float score_threshold, float nms_threshold, bool debug_flag);
+std::vector<DetectionResult> yolov8_tail_post_process(float** input, int class_num, float scale_x, float scale_y, float score_threshold, float nms_threshold, bool debug_flag);
 
 /** @brief Draw the detection result to image.
 
@@ -47,6 +62,7 @@ std::vector<DetectionResult> yolov8_post_process(float** input, int class_num, f
 * @param num_of_classes the total number of classes.
 */
 void yolov8_draw_result(std::vector<DetectionResult> results, cv::Mat &img, const std::string* class_names, int num_of_classes);
+
 
 
 #endif // YOLOV8_POST_H

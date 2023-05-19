@@ -9,6 +9,8 @@ set(RKNN_RT_LIB ${CMAKE_SOURCE_DIR}/lib/librknnrt.so)
 set(OpenCV_DIR /root/lib/opencv454_install/lib/cmake/opencv4)
 find_package(OpenCV REQUIRED)
 
+find_package(Threads REQUIRED) # find and include pthreads
+
 add_executable(${PROJECT_NAME}_picture
         src/picture_demo.cc
         src/rknn_net.cc
@@ -29,4 +31,5 @@ target_link_libraries(${PROJECT_NAME}_picture
 target_link_libraries(${PROJECT_NAME}_video
   ${RKNN_RT_LIB}
   ${OpenCV_LIBS}
+  Threads::Threads
 )

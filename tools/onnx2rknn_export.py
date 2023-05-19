@@ -6,6 +6,7 @@ import sys
 import numpy as np
 import cv2
 import yolov8_box_head
+from yolov8_tail import tail_process
 
 from rknn.api import RKNN
 
@@ -16,7 +17,7 @@ DATASET = '../data/dataset.txt'
 
 QUANTIZE_ON = True
 
-HEAD_PROC = True
+TAIL_PROC = True
 
 OBJ_THRESH = 0.5
 NMS_THRESH = 0.45
@@ -153,14 +154,10 @@ if __name__ == '__main__':
     # Inference
     print('--> Running model')
     outputs = rknn.inference(inputs=[blob], data_format="nchw", inputs_pass_through=[1])
-    # Transpose
-    outputs[0] = np.transpose(outputs[0], (0,2,1))
-    outputs[1] = np.transpose(outputs[1], (0,2,1))
-    np.save("./"+ONNX_MODEL.split('.')[0]+"_result_0.npy", outputs[0])
-    np.save("./"+ONNX_MODEL.split('.')[0]+"_result_1.npy", outputs[1])
     print('done')
 
-    if (HEAD_PROC):
+    if (TAIL_PROC):
+        outputs = tail_process(outputs)
         outputs[0] = yolov8_box_head.yolov8_box_head(outputs[0])
 
     merge_output = np.concatenate(outputs, axis=1)

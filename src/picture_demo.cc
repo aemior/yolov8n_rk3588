@@ -37,7 +37,7 @@ int main (int argc, char* argv[]) {
 
     // Default parameters
     std::string input_path = "../data/bus.jpg";
-    std::string model_path = "../data/yolov8n_no_boxhead_transpose.rknn";
+    std::string model_path = "../data/yolov8n_no_tail.rknn";
     std::string output_path = "./debug.png";
     float score_threshold = 0.4;
     float nms_threshold = 0.5;
@@ -76,7 +76,7 @@ int main (int argc, char* argv[]) {
     }
 
     // Load the model
-    rknn_net* yolov8 = rknn_net_create(model_path.c_str(), false);
+    rknn_net* yolov8 = rknn_net_create(model_path.c_str(), 0, false);
     
     // Read image
     cv::Mat img = cv::imread(input_path);
@@ -87,23 +87,22 @@ int main (int argc, char* argv[]) {
     // Resize the image to 640x640
     cv::resize(img, img, cv::Size(640, 640));
 
-    // Convert img properly
-    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
-    img -= 128;
 
     // Allocate data buffer to save the raw result from Neural net
-    float** outputs;
-    outputs = (float**)malloc(2 * sizeof(float*));
-    outputs[0] = (float*)malloc(1*4*8400 * sizeof(float));
-    outputs[1] = (float*)malloc(1*80*8400 * sizeof(float));
+    float* outputs[6];
+    outputs[0] = (float*)malloc(1*80*400 * sizeof(float));
+    outputs[1] = (float*)malloc(1*64*400 * sizeof(float));
+    outputs[2] = (float*)malloc(1*80*1600 * sizeof(float));
+    outputs[3] = (float*)malloc(1*64*1600 * sizeof(float));
+    outputs[4] = (float*)malloc(1*80*6400 * sizeof(float));
+    outputs[5] = (float*)malloc(1*64*6400 * sizeof(float));
 
     // Do inference
     rknn_net_inference(yolov8, (int8_t*)img.data, outputs);
 
     // Post process to get the detection result
-    std::vector<DetectionResult> results = yolov8_post_process(outputs, 80, scale_x, scale_y, 0.4, 0.8, debug_flag);
+    std::vector<DetectionResult> results = yolov8_tail_post_process(outputs, 80, scale_x, scale_y, 0.4, 0.8, debug_flag);
 
-    // Draw the detection result
     yolov8_draw_result(results, output_img, coco_classes, 80);
 
     // Write the image which have detection result

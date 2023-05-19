@@ -50,7 +50,7 @@ const char* get_type(rknn_tensor_type type) {
 }
 
 
-rknn_net* rknn_net_create(const char* model_path, int debug_flag) {
+rknn_net* rknn_net_create(const char* model_path, int target_npu, int debug_flag) {
 
     FILE* fp = fopen(model_path, "rb");
     if(fp == NULL) {
@@ -86,7 +86,7 @@ rknn_net* rknn_net_create(const char* model_path, int debug_flag) {
 
     //rknn_context* ctx = NULL;
     rknn_context* ctx = (rknn_context*)malloc(sizeof(rknn_context));
-    int ret = rknn_init(ctx, model, model_size, 0, NULL);
+    int ret = rknn_init(ctx, model, model_size, RKNN_FLAG_COLLECT_PERF_MASK, NULL);
     if(ret < 0) {
         printf("rknn_init fail! ret=%d\n", ret);
         free(model);
@@ -180,6 +180,20 @@ rknn_net* rknn_net_create(const char* model_path, int debug_flag) {
         }
     }
 
+    switch (target_npu)
+    {
+    case 0:
+        rknn_set_core_mask(*ctx, RKNN_NPU_CORE_0);
+        break;
+    case 1:
+        rknn_set_core_mask(*ctx, RKNN_NPU_CORE_1);
+        break;
+    case 2:
+        rknn_set_core_mask(*ctx, RKNN_NPU_CORE_2);
+    default:
+        break;
+    }
+
     // allocate and initialize rknn_net structure
     rknn_net* net = (rknn_net*)malloc(sizeof(rknn_net));
     net->ctx = ctx;
@@ -216,7 +230,19 @@ int rknn_net_inference(rknn_net* net, int8_t* input, float** output) {
         printf("rknn_inputs_set done.\n");
     }
 
+    //Timer t1;
+    //for (int j=0; j<50; ++j) {
+    //    t1.reset();
     ret = rknn_run(*(net->ctx), NULL);
+    //std::cout << ":>" << t1.elapsed() << std::endl;
+    //}
+    //rknn_perf_detail perf_detail;
+    //ret = rknn_query(*(net->ctx), RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
+    //for (int j=0; j<perf_detail.data_len; ++j) {
+    //    std::cout << perf_detail.perf_data[j];
+    //}
+    //std::cout << std::endl;
+
     if(ret < 0) {
         printf("rknn_run fail! ret=%d\n", ret);
         return 1;
@@ -224,10 +250,10 @@ int rknn_net_inference(rknn_net* net, int8_t* input, float** output) {
         printf("rknn_run done.\n");
     }
 
-    rknn_output outputs[2];
+    rknn_output outputs[6];
     memset(outputs, 0, sizeof(outputs));
 
-    for (int i=0; i<2; ++i) {
+    for (int i=0; i<6; ++i) {
         outputs[i].want_float = true;
         outputs[i].is_prealloc = true;
         outputs[i].buf = output[i];
@@ -235,7 +261,7 @@ int rknn_net_inference(rknn_net* net, int8_t* input, float** output) {
         outputs[i].size = net->output_attrs[0].n_elems * sizeof(float);
     }
 
-    ret = rknn_outputs_get(*(net->ctx), 2, outputs, NULL);
+    ret = rknn_outputs_get(*(net->ctx), 6, outputs, NULL);
     if(ret < 0) {
         printf("rknn_outputs_get fail! ret=%d\n", ret);
         return 1;
@@ -243,10 +269,10 @@ int rknn_net_inference(rknn_net* net, int8_t* input, float** output) {
         printf("rknn_outputs_get done.\n");
     }
 
-    for (int i=0; i<2; ++i) {
+    for (int i=0; i<6; ++i) {
         memcpy(output[i], outputs[i].buf, outputs[i].size);
     }
-    rknn_outputs_release(*(net->ctx), 2, outputs);
+    rknn_outputs_release(*(net->ctx), 6, outputs);
 
     return 0;
 }

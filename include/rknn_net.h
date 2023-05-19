@@ -24,7 +24,7 @@ typedef struct rknn_net {
 
 
 // Function prototypes
-rknn_net* rknn_net_create(const char* model_path, int debug_flag);
+rknn_net* rknn_net_create(const char* model_path, int target_npu, int debug_flag);
 int rknn_net_inference(rknn_net* net, int8_t* input, float** output);
 void rknn_net_destroy(rknn_net* net);
 static float deqnt_affine_to_f32(int8_t qnt, int32_t zp, float scale) { return ((float)qnt - (float)zp) * scale; }

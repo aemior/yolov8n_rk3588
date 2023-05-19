@@ -1,15 +1,45 @@
 #include "rknn_net.h"
 #include "yolov8_post.h"
+#include "yolo_multi_npu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <iostream>
+#include <pthread.h>
+#include <signal.h>
+#include <time.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/dnn.hpp>
 #include <chrono>
+
+void preciseSleep(double seconds)
+{
+    struct timespec ts;
+    ts.tv_sec = (time_t)seconds; // Truncate the decimal part for the 'seconds' component
+    ts.tv_nsec = (long)((seconds - ts.tv_sec) * 1e+9); // Subtract the 'seconds' component from 'seconds', leaving the fractional part
+
+    nanosleep(&ts, NULL);
+}
+
+volatile sig_atomic_t flag = 0;
+CircularBuffer input_buffer, output_buffer;
+
+void handler(int sig) {
+    flag = 1;
+    output_buffer.stop = true;
+    pthread_cond_signal(&output_buffer.notEmpty);
+    pthread_cond_signal(&output_buffer.notFull);
+    printf("\nCtrl+C Press, Wait Thread stop.\n");
+    input_buffer.stop = true;
+    pthread_cond_signal(&input_buffer.notEmpty);
+    pthread_cond_signal(&input_buffer.notFull);
+    sleep(2);
+    printf("STOPED!\n");
+}
+
 
 class Timer {
 public:
@@ -32,26 +62,17 @@ int main () {
     //std::cout << cv::getBuildInformation() << std::endl;
     // Default parameters
     std::string input_path = "/root/data/test_video.mp4";
-    std::string model_path = "../data/yolov8n_no_boxhead_transpose.rknn";
-    std::string output_path = "ffmpeg -f rawvideo -pix_fmt bgr24 -s 640x640 -i - -an -f rtsp rtsp://localhost:8848/test_video";
+    std::string model_path = "../data/yolov8n_no_tail.rknn";
+    std::string output_path = "ffmpeg -loglevel quiet -f rawvideo -pix_fmt bgr24 -s 640x640 -r 28 -i - -an -b:v 20M -f rtsp rtsp://localhost:8848/test_video";
     float score_threshold = 0.4;
     float nms_threshold = 0.5;
     bool debug_flag = false;
     cv::Mat frame, output_img;
     //Temp var
     float scale_x, scale_y;
+    signal(SIGINT, handler);
 
-    // Allocate data buffer to save the raw result from Neural net
-    float** outputs;
-    outputs = (float**)malloc(2 * sizeof(float*));
-    outputs[0] = (float*)malloc(1*4*8400 * sizeof(float));
-    outputs[1] = (float*)malloc(1*80*8400 * sizeof(float));
-
-    // Load the model
-    rknn_net* yolov8 = rknn_net_create(model_path.c_str(), false);
-
-    //Open the video
-    cv::VideoCapture cap("/root/data/test_video.mp4");
+    cv::VideoCapture cap(input_path);
     if(!cap.isOpened()) {
         printf("Video Open Faild\n");
         return -1;
@@ -59,47 +80,66 @@ int main () {
 
 
     //Setup output
-    //FILE* ffmpeg = popen(output_path.c_str(), "w");
-    //if (!ffmpeg) {
-    //    fprintf(stderr, "Could not open pipe to ffmpeg\n");
-    //    return 1;
-    //}
+    FILE* ffmpeg = popen(output_path.c_str(), "w");
+    if (!ffmpeg) {
+        fprintf(stderr, "Could not open pipe to ffmpeg\n");
+        return 1;
+    }
+    int8_t* result_img = (int8_t*)malloc(3*640*640*sizeof(int8_t));
+
+    //Setup FIFO
+    initialize(&input_buffer);
+    initialize(&output_buffer);
+
+    pthread_t threads[4];
+    int npu_0=0, npu_1=1, npu_2=2;
+    yolov8_npu_arg npu_arg_0, npu_arg_1, npu_arg_2;
+    npu_arg_0.input = &input_buffer;
+    npu_arg_0.output = &output_buffer;
+    npu_arg_0.model_path = &model_path;
+    npu_arg_0.target_npu = &npu_0;
+    pthread_create(&threads[0], NULL, yolov8_npu_thread, &npu_arg_0);
+    npu_arg_1.input = &input_buffer;
+    npu_arg_1.output = &output_buffer;
+    npu_arg_1.model_path = &model_path;
+    npu_arg_1.target_npu = &npu_1;
+    pthread_create(&threads[1], NULL, yolov8_npu_thread, &npu_arg_1);
+    npu_arg_2.input = &input_buffer;
+    npu_arg_2.output = &output_buffer;
+    npu_arg_2.model_path = &model_path;
+    npu_arg_2.target_npu = &npu_2;
+    pthread_create(&threads[2], NULL, yolov8_npu_thread, &npu_arg_2);
+
+    video_read_arg video_arg;
+    video_arg.cam = &cap;
+    video_arg.output = &input_buffer;
+    pthread_create(&threads[3], NULL, video_read_thread, &video_arg);
 
     Timer timer;
-    int cnt=0;
-    while(true)
+    size_t cnt=0;
+    fprintf(stdout, "Wait for buffering!\n");
+    sleep(5);
+    fprintf(stdout, "Main process start!\n");
+    while(!flag)
     {
-        if (++cnt > 10)
-            break;
-        cap >> frame; // get a new frame from camera/video or read image
-        if(frame.empty())
-            break;
 
-        // Resize the image to 640x640
-        cv::resize(frame, frame, cv::Size(640, 640));
-        output_img = frame.clone();
-
-        // Convert img properly
-        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        frame -= 128;
-
-
-        // Do inference
         timer.reset();
-        rknn_net_inference(yolov8, (int8_t*)frame.data, outputs);
-        std::cout << "Elapsed time: " << timer.elapsed() << " seconds" << std::endl;
-
-        // Post process to get the detection result
-        std::vector<DetectionResult> results = yolov8_post_process(outputs, 80, 1, 1, 0.4, 0.8, debug_flag);
-
-        // Draw the detection result
-        yolov8_draw_result(results, output_img, coco_classes, 80);
-
-        //fwrite(output_img.data, sizeof(char), output_img.total()*output_img.channels(), ffmpeg);
+        dequeue(&output_buffer, result_img);
+        if (output_buffer.stop) break;
+        if (timer.elapsed() < 0.033) preciseSleep(0.033-timer.elapsed());
+        fwrite(result_img, sizeof(char), 3*640*640, ffmpeg);
+        fprintf(stdout, "\rFPS: %f, total frame:%d    ", 1/timer.elapsed(), ++cnt);
     }
 
+    fprintf(stdout, "\nMain process stop!\n");
+    input_buffer.stop = true;
+    pthread_cond_signal(&input_buffer.notEmpty);
+    pthread_cond_signal(&input_buffer.notFull);
+
     // Release the resource
-    rknn_net_destroy(yolov8);
-    //pclose(ffmpeg);
+    release(&input_buffer);
+    release(&output_buffer);
+    free(result_img);
+    pclose(ffmpeg);
     return 0;
 }
